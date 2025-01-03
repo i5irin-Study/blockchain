@@ -59,3 +59,31 @@ class Blockchain(object):
   @property
   def last_block(self):
     pass
+
+  def proof_of_work(self, last_proof):
+    """
+    Simple proof-of-work algorithm:
+     - find p' such that the first four of hash(pp')
+     - Find p' such that the first 4 of hash(pp') are 0
+     - p is the proof of the previous block, p' is the proof of the new block
+    :param last_proof: <int>
+    return: <int>
+    """
+    proof = 0
+    while self.valid_proof(last_proof, proof) is False:
+      proof += 1
+
+    return proof
+
+  @staticmethod
+  def valid_proof(last_proof, proof):
+    """
+    Check that the proofs are correct: are the first 4 of hash(last_proof, proof) 0?
+    :param last_proof: <int> previous proof
+    :param proof: <int> current proof
+    return: <bool> true if correct, false otherwise
+    """
+    guess = f'{last_proof}{proof}'.encode()
+    guess_hash = hashlib.sha256(guess).hexdigest()
+
+    return guess_hash[:4] == "0000"
