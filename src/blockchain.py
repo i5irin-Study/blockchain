@@ -1,6 +1,6 @@
 import hashlib
 import json
-import time
+from time import time
 from uuid import uuid4
 
 from flask import Flask, jsonify, request
@@ -61,7 +61,7 @@ class Blockchain(object):
 
   @property
   def last_block(self):
-    pass
+    return self.chain[-1]
 
   def proof_of_work(self, last_proof):
     """
@@ -143,6 +143,7 @@ def mine():
   }
   return jsonify(response), 200
 
+@app.route('/chain', methods=['GET'])
 def full_chain():
   response = {
     'chain': blockchain.chain,
@@ -152,4 +153,4 @@ def full_chain():
 
 # Start the server with port5000
 if __name__ == '__main__':
-  app.run(host='0.0.0.0', port=5000)
+  app.run(host='0.0.0.0', port=8080)
