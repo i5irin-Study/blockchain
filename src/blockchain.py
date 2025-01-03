@@ -1,6 +1,9 @@
 import hashlib
 import json
 import time
+from uuid import uuid4
+
+from flask import Flask, jsonify, request
 
 class Blockchain(object):
   def __init__(self):
@@ -87,3 +90,66 @@ class Blockchain(object):
     guess_hash = hashlib.sha256(guess).hexdigest()
 
     return guess_hash[:4] == "0000"
+
+# Create a node
+app = Flask(__name__)
+
+# Create a globally unique address for this node
+node_identifier = str(uuid4()).replace('-', '')
+
+# Instantiate blockchain class
+blockchain = Blockchain()
+
+@app.route('/transactions/new', methods=['POST'])
+def new_transactions():
+  values = request.get_json()
+
+  # validation
+  required = ['sender', 'recipient', 'amount']
+  if not all(k in values for k in required):
+    return 'Missing values', 400
+
+  # Create a new transaction
+  index = blockchain.new_transaction(values['sender'], values['recipient'], values['amount'])
+
+  response = {
+    'message': f'トランザクションはブロック {index} に追加されました'
+  }
+  return jsonify(response), 201
+
+@app.route('/mine', methods=['GET'])
+def mine():
+  # Use proof-of-work algorithm to find the next proof
+  last_block = blockchain.last_block
+  last_proof = last_block['proof']
+  proof = blockchain.proof_of_work(last_proof)
+
+  # Get rewarded for finding a proof
+  # Sender sets “0” to indicate that the miner has mined new coins
+  blockchain.new_transaction(
+    sender="0",
+    recipient=node_identifier,
+    amount=1,
+  )
+
+  # Mining new blocks by adding new blocks to the chain
+  block = blockchain.new_block(proof)
+  response = {
+    'message': '新しいブロックを採掘しました',
+    'index': block['index'],
+    'transactions': block['transactions'],
+    'proof': block['proof'],
+    'previous_hash': block['previous_hash'],
+  }
+  return jsonify(response), 200
+
+def full_chain():
+  response = {
+    'chain': blockchain.chain,
+    'length': len(blockchain.chain),
+  }
+  return jsonify(response), 200
+
+# Start the server with port5000
+if __name__ == '__main__':
+  app.run(host='0.0.0.0', port=5000)
