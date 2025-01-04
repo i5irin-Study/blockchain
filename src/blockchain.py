@@ -1,14 +1,18 @@
 import hashlib
 import json
+import os
 from time import time
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from flask import Flask, jsonify, request
+import requests
 
 class Blockchain(object):
   def __init__(self):
     self.chain = []
     self.current_transactions = []
+    self.nodes = set()
 
     # Generate the genesis block
     self.new_block(previous_hash=1, proof=100)
@@ -91,6 +95,73 @@ class Blockchain(object):
 
     return guess_hash[:4] == "0000"
 
+  def register_node(self, address):
+    """
+    Add a new node to the node list
+    :param address: <str> address of the node Example: 'http://192.168.0.5:5000'
+    :return: None
+    """
+    parsed_url = urlparse(address)
+    self.nodes.add(parsed_url.netloc)
+
+  def valid_chain(self, chain):
+    """
+    Check if the blockchain is correct
+    :param chain: <list> blockchain
+    return: <bool> True for correct, False for not
+    """
+    last_block = chain[0]
+    current_index = 1
+
+    while current_index < len(chain):
+      block = chain[current_index]
+      print(f'{last_block}')
+      print(f'{block}')
+      print("\n--------------\n")
+
+      # Verify that the hash of the block is correct
+      if block['previous_hash'] != self.hash(last_block):
+        return False
+
+      # Ensure proof-of-work is correct
+      if not self.valid_proof(last_block['proof'], block['proof']):
+        return False
+
+      last_block = block
+      current_index += 1
+
+    return True
+
+  def resolve_conflicts(self):
+    """
+    The longest chain on the network replaces its own chain to resolve the conflict
+    :return: <bool> True if the chain replaces itself, False otherwise
+    """
+    neighbours = self.nodes
+    new_chain = None
+
+    max_length = len(self.chain)
+
+    # Check the chain of all other nodes
+    for node in neighbours:
+      response = requests.get(f'http://{node}/chain')
+
+      if response.status_code == 200:
+        length = response.json()['length']
+        chain = response.json()['chain']
+
+        # Check if that chain is longer or valid
+        if length > max_length and self.valid_chain(chain):
+          max_length = length
+          new_chain = chain
+
+    # If it finds a longer and more valid chain than its own, it will replace it.
+    if new_chain:
+      self.chain = new_chain
+      return True
+
+    return False
+
 # Create a node
 app = Flask(__name__)
 
@@ -113,7 +184,7 @@ def new_transactions():
   index = blockchain.new_transaction(values['sender'], values['recipient'], values['amount'])
 
   response = {
-    'message': f'トランザクションはブロック {index} に追加されました'
+    'message': f'Transaction has been added to block {index}'
   }
   return jsonify(response), 201
 
@@ -135,7 +206,7 @@ def mine():
   # Mining new blocks by adding new blocks to the chain
   block = blockchain.new_block(proof)
   response = {
-    'message': '新しいブロックを採掘しました',
+    'message': 'New blocks mined',
     'index': block['index'],
     'transactions': block['transactions'],
     'proof': block['proof'],
@@ -151,6 +222,41 @@ def full_chain():
   }
   return jsonify(response), 200
 
-# Start the server with port5000
+@app.route('/nodes/register', methods=['POST'])
+def register_node():
+  values = request.get_json()
+
+  nodes = values.get('nodes')
+  if nodes is None:
+    return "Error: List of non-valid nodes", 400
+
+  for node in nodes:
+    blockchain.register_node(node)
+
+  response = {
+    'message': 'New nodes have been added',
+    'total_nodes': list(blockchain.nodes),
+  }
+  return jsonify(response), 201
+
+@app.route('/nodes/resolve', methods=['GET'])
+def consensus():
+    replaced = blockchain.resolve_conflicts()
+
+    if replaced:
+      response = {
+        'message': 'Chain has been replaced',
+        'new_chain': blockchain.chain
+      }
+    else:
+      response = {
+        'message': 'Chain has been verified',
+        'chain': blockchain.chain
+      }
+
+    return jsonify(response), 200
+
+# Start the server with PORT
 if __name__ == '__main__':
-  app.run(host='0.0.0.0', port=8080)
+  port = os.environ['PORT']
+  app.run(host='0.0.0.0', port=port)
